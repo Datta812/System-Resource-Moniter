@@ -1,0 +1,20 @@
+# Compiled program (rebuilt by run.sh)
+resource_monitor
+
+# Database files (created at runtime)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Windows download markers created when files pass through WSL
+*:Zone.Identifier
+*Zone.Identifier
+
+# Editor / OS
+.vscode/
+.DS_Store

@@ -1,0 +1,325 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OS Resource Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">OPERATING SYSTEMS PROJECT</p>
+            <h1>System Resource Monitor</h1>
+            <p class="subtitle">Live system performance and historical measurements</p>
+        </div>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span id="connection-status">Connecting...</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="metrics">
+            <article class="metric-card">
+                <p>CPU Utilization</p>
+                <h2 id="cpu-value">--%</h2>
+                <div class="track"><div id="cpu-bar" class="bar cpu-bar"></div></div>
+            </article>
+
+            <article class="metric-card">
+                <p>Memory Utilization</p>
+                <h2 id="memory-value">--%</h2>
+                <div class="track"><div id="memory-bar" class="bar memory-bar"></div></div>
+                <small id="memory-detail">Waiting for data...</small>
+            </article>
+
+            <article class="metric-card">
+                <p>Disk Read Rate</p>
+                <h2 id="disk-read-value">--</h2>
+                <small>KB/s</small>
+            </article>
+
+            <article class="metric-card">
+                <p>Disk Write Rate</p>
+                <h2 id="disk-write-value">--</h2>
+                <small>KB/s</small>
+            </article>
+
+            <article class="metric-card">
+                <p>Network Download</p>
+                <h2 id="download-value">--</h2>
+                <small>KB/s</small>
+            </article>
+
+            <article class="metric-card">
+                <p>Network Upload</p>
+                <h2 id="upload-value">--</h2>
+                <small>KB/s</small>
+            </article>
+        </section>
+
+        <section class="metrics">
+            <article class="metric-card">
+                <p>Load Average (1 / 5 / 15 min)</p>
+                <h2 id="load-value">--</h2>
+                <small>runnable tasks averaged over time</small>
+            </article>
+
+            <article class="metric-card">
+                <p>Processes</p>
+                <h2 id="process-value">--</h2>
+                <small id="process-detail">running / total</small>
+            </article>
+
+            <article class="metric-card">
+                <p>System Uptime</p>
+                <h2 id="uptime-value">--</h2>
+                <small>since last boot</small>
+            </article>
+        </section>
+
+        <div class="toolbar">
+            <label for="range">History window:</label>
+            <select id="range">
+                <option value="60">Last 1 min</option>
+                <option value="300">Last 5 min</option>
+                <option value="900">Last 15 min</option>
+                <option value="3600">Last 1 hour</option>
+            </select>
+            <span id="summary" class="summary">Avg / peak: waiting...</span>
+            <a class="button" href="/api/export.csv">Download CSV</a>
+        </div>
+
+        <section class="charts">
+            <article class="chart-card">
+                <h3>CPU Utilization History</h3>
+                <div class="chart-container"><canvas id="cpu-chart"></canvas></div>
+            </article>
+
+            <article class="chart-card">
+                <h3>Memory Utilization History</h3>
+                <div class="chart-container"><canvas id="memory-chart"></canvas></div>
+            </article>
+
+            <article class="chart-card">
+                <h3>Disk I/O Throughput</h3>
+                <div class="chart-container"><canvas id="disk-chart"></canvas></div>
+            </article>
+
+            <article class="chart-card">
+                <h3>Network Bandwidth</h3>
+                <div class="chart-container"><canvas id="network-chart"></canvas></div>
+            </article>
+            <article class="chart-card">
+                <h3>Load Average</h3>
+                <div class="chart-container"><canvas id="load-chart"></canvas></div>
+            </article>
+
+            <article class="chart-card">
+                <h3>Process Count</h3>
+                <div class="chart-container"><canvas id="process-chart"></canvas></div>
+            </article>
+        </section>
+
+        <footer>
+            <span>Data source: SQLite resource_history</span>
+            <span>Last update: <strong id="last-update">Waiting...</strong></span>
+            <span>Refresh interval: 2 seconds (disk/network shown as totals of whole disks and real interfaces)</span>
+        </footer>
+    </main>
+
+    <script>
+        const number = value => Number(value || 0);
+        const format = value => number(value).toFixed(2);
+
+        function setBar(id, value) {
+            document.getElementById(id).style.width =
+                Math.min(100, Math.max(0, number(value))) + "%";
+        }
+
+        function createChart(canvasId, datasets, maxY = undefined) {
+            return new Chart(document.getElementById(canvasId), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: datasets.map(dataset => ({
+                        label: dataset.label,
+                        data: [],
+                        borderColor: dataset.color,
+                        backgroundColor: dataset.color,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.25
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    interaction: { intersect: false, mode: "index" },
+                    plugins: {
+                        legend: { position: "bottom" }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { maxTicksLimit: 6, maxRotation: 0 }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ...(maxY ? { max: maxY } : {})
+                        }
+                    }
+                }
+            });
+        }
+
+        const cpuChart = createChart("cpu-chart", [
+            { label: "CPU %", color: "#2563eb" }
+        ], 100);
+
+        const memoryChart = createChart("memory-chart", [
+            { label: "Memory %", color: "#7c3aed" }
+        ], 100);
+
+        const diskChart = createChart("disk-chart", [
+            { label: "Read KB/s", color: "#0891b2" },
+            { label: "Write KB/s", color: "#ea580c" }
+        ]);
+
+        const networkChart = createChart("network-chart", [
+            { label: "Download KB/s", color: "#16a34a" },
+            { label: "Upload KB/s", color: "#db2777" }
+        ]);
+
+        const loadChart = createChart("load-chart", [
+            { label: "1 min", color: "#dc2626" },
+            { label: "5 min", color: "#d97706" },
+            { label: "15 min", color: "#65a30d" }
+        ]);
+
+        const processChart = createChart("process-chart", [
+            { label: "Total", color: "#475569" },
+            { label: "Running", color: "#0d9488" }
+        ]);
+
+        function formatUptime(seconds) {
+            const s = Math.floor(number(seconds));
+            const d = Math.floor(s / 86400);
+            const h = Math.floor((s % 86400) / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            return (d ? d + "d " : "") + h + "h " + m + "m";
+        }
+
+        function timeLabel(timestamp) {
+            if (!timestamp) return "";
+            return timestamp.slice(11, 19);
+        }
+
+        function updateChart(chart, rows, fields) {
+            chart.data.labels = rows.map(row => timeLabel(row.timestamp));
+
+            fields.forEach((field, index) => {
+                chart.data.datasets[index].data =
+                    rows.map(row => number(row[field]));
+            });
+
+            chart.update("none");
+        }
+
+        async function refreshDashboard() {
+            try {
+                const limit = document.getElementById("range").value;
+                const [latestResponse, historyResponse, summaryResponse] =
+                    await Promise.all([
+                        fetch("/api/latest", { cache: "no-store" }),
+                        fetch("/api/history?limit=" + limit, { cache: "no-store" }),
+                        fetch("/api/summary?limit=" + limit, { cache: "no-store" })
+                    ]);
+
+                if (!latestResponse.ok || !historyResponse.ok) {
+                    throw new Error("API returned an error");
+                }
+
+                const latest = await latestResponse.json();
+                const history = await historyResponse.json();
+                const stats = summaryResponse.ok ? await summaryResponse.json() : null;
+
+                document.getElementById("load-value").textContent =
+                    [latest.load_1, latest.load_5, latest.load_15]
+                        .map(format).join(" / ");
+                document.getElementById("process-value").textContent =
+                    number(latest.running_processes) + " / " +
+                    number(latest.total_processes);
+                document.getElementById("uptime-value").textContent =
+                    formatUptime(latest.uptime_seconds);
+
+                if (stats) {
+                    document.getElementById("summary").textContent =
+                        "CPU avg " + format(stats.cpu_avg) + "% (peak " +
+                        format(stats.cpu_max) + "%) · Memory avg " +
+                        format(stats.memory_avg) + "% (peak " +
+                        format(stats.memory_max) + "%)";
+                }
+
+                document.getElementById("cpu-value").textContent =
+                    format(latest.cpu_percent) + "%";
+                document.getElementById("memory-value").textContent =
+                    format(latest.memory_percent) + "%";
+
+                setBar("cpu-bar", latest.cpu_percent);
+                setBar("memory-bar", latest.memory_percent);
+
+                document.getElementById("memory-detail").textContent =
+                    format(number(latest.memory_used_kb) / 1048576) +
+                    " GB used / " +
+                    format(number(latest.memory_total_kb) / 1048576) +
+                    " GB total";
+
+                document.getElementById("disk-read-value").textContent =
+                    format(latest.disk_read_kbps);
+                document.getElementById("disk-write-value").textContent =
+                    format(latest.disk_write_kbps);
+                document.getElementById("download-value").textContent =
+                    format(latest.network_download_kbps);
+                document.getElementById("upload-value").textContent =
+                    format(latest.network_upload_kbps);
+
+                updateChart(cpuChart, history, ["cpu_percent"]);
+                updateChart(memoryChart, history, ["memory_percent"]);
+                updateChart(diskChart, history, [
+                    "disk_read_kbps", "disk_write_kbps"
+                ]);
+                updateChart(networkChart, history, [
+                    "network_download_kbps", "network_upload_kbps"
+                ]);
+                updateChart(loadChart, history, ["load_1", "load_5", "load_15"]);
+                updateChart(processChart, history, [
+                    "total_processes", "running_processes"
+                ]);
+
+                const stale = latest.age_seconds !== null &&
+                              latest.age_seconds > 10;
+                const dot = document.querySelector(".status-dot");
+                dot.classList.toggle("offline", stale);
+                document.getElementById("connection-status").textContent =
+                    stale ? "Monitor stopped (data is " + latest.age_seconds +
+                            "s old)" : "Live";
+                document.getElementById("last-update").textContent =
+                    new Date().toLocaleTimeString();
+            } catch (error) {
+                document.querySelector(".status-dot").classList.add("offline");
+                document.getElementById("connection-status").textContent =
+                    "Waiting for data - is ./resource_monitor running?";
+                console.error("Dashboard refresh failed:", error);
+            }
+        }
+
+        document.getElementById("range").addEventListener("change", refreshDashboard);
+        refreshDashboard();
+        setInterval(refreshDashboard, 2000);
+    </script>
+</body>
+</html>
