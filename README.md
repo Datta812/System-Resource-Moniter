@@ -90,11 +90,14 @@ Follow the terminal instructions to access the dashboard.
 
 SQLite is used to store historical system resource monitoring information.
 
-## Author
+## Team
 
-**Datta812**
-
-GitHub: [@Datta812](https://github.com/Datta812)
+| Name | Registration No. |
+|---|---|
+| Siddireddy Manoj Reddy | AP24110010469 |
+| Gundapaneni Kusadatta | AP24110011788 |
+| Mandadapu Naga Manikanta | AP24110011800 |
+| Pillimitla Yeswanth | AP24110011159 |
 
 ## License
 
