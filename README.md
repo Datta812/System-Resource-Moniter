@@ -1,4 +1,4 @@
-# System Resource Monitor
+# System Resource Monitor.
 
 A Linux-based System Resource Monitoring application built using **C++, Python, Flask, and SQLite**. The project monitors system resource usage, stores historical data, and provides a web-based dashboard for visualization.
 
